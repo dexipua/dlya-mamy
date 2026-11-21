@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Для найфайнішої мами 🍁</title>
 <meta property="og:title" content="Для найфайнішої мами 🍁">
 <meta property="og:description" content="Відкрий конверт — там дещо для тебе ❤️">
@@ -94,12 +94,35 @@ footer{padding:40px 16px 70px;text-align:center;font-family:Caveat;font-size:1.9
 .reveal{opacity:0;transform:translateY(30px);transition:opacity .9s,transform .9s}
 .reveal.vis{opacity:1;transform:none}
 :focus-visible{outline:3px solid var(--denim);outline-offset:3px}
+#music{position:fixed;right:calc(14px + env(safe-area-inset-right));bottom:calc(14px + env(safe-area-inset-bottom));z-index:60;width:54px;height:54px;border-radius:50%;border:0;background:var(--paper);font-size:1.5rem;cursor:pointer;box-shadow:0 8px 20px -6px rgba(142,43,59,.5)}
+#music[hidden]{display:none}
+#music[aria-pressed="true"]{animation:beat 1.58s ease-in-out infinite}
+@keyframes beat{50%{transform:scale(1.08)}}
+
+/* phones */
+html{-webkit-text-size-adjust:100%}
+body{-webkit-tap-highlight-color:transparent}
+#intro{min-height:100svh}
+button,.env,.polaroid,#garden{touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.polaroid img{-webkit-touch-callout:none}
+@media (max-width:600px){
+  section{padding:44px 16px}
+  .hero{padding-top:36px}
+  .letter{padding:26px 20px;font-size:1.05rem;line-height:1.65}
+  .cards{grid-template-columns:repeat(2,1fr);gap:10px}
+  .flip .f{font-size:2.4rem}
+  .flip .b{font-size:.92rem;padding:10px}
+  #garden{height:260px}
+  .hug{width:100%;max-width:320px}
+  footer{padding-bottom:calc(90px + env(safe-area-inset-bottom))}
+}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}#leaves{display:none}.reveal{opacity:1;transform:none}}
 </style>
 </head>
 <body>
 <div id="leaves" aria-hidden="true"></div>
 <canvas id="fx" aria-hidden="true"></canvas>
+<button id="music" hidden aria-label="Музика" aria-pressed="false">🔇</button>
 
 <div id="intro">
   <p class="hand">Мамуль, тут дещо файне для тебе…</p>
@@ -110,7 +133,7 @@ footer{padding:40px 16px 70px;text-align:center;font-family:Caveat;font-size:1.9
     <div class="flap"></div>
     <div class="seal">💌</div>
   </div>
-  <p class="tap">тицьни на конверт</p>
+  <p class="tap">тицьни на конверт · 🔊 увімкни звук</p>
 </div>
 
 <main id="main">
@@ -207,10 +230,65 @@ if (!calm) {
 }
 document.addEventListener('visibilitychange', () => document.body.classList.toggle('paused', document.hidden));
 
+// --- music: original music-box tune generated with Web Audio (no audio file, no licensing) ---
+const music = (() => {
+  let ac, timer, step = 0, next = 0, on = false;
+  const eighth = 60 / 76 / 2;
+  const hz = m => 440 * 2 ** ((m - 69) / 12);
+  const chords = [[48, 55, 60, 64], [45, 52, 57, 60], [41, 48, 53, 57], [43, 50, 55, 59]]; // C Am F G
+  const arp = [0, 1, 2, 3, 2, 1, 2, 3];
+  const mel = [[76, 79, 76, 74], [72, 76, 69, 0], [69, 72, 77, 76], [74, 0, 71, 74],
+               [76, 79, 84, 83], [81, 76, 72, 0], [77, 76, 74, 72], [74, 0, 67, 0]];
+  let bus;
+  function tone(f, t, dur, gain, type) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + .012);
+    g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g).connect(bus); o.start(t); o.stop(t + dur + .05);
+  }
+  function schedule() {
+    while (next < ac.currentTime + .3) {
+      const bar = Math.floor(step / 8) % 8, ch = chords[bar % 4], i = step % 8;
+      tone(hz(ch[arp[i]] + 12), next, 1.1, .035, 'sine');
+      if (i === 0) tone(hz(ch[0]), next, 2.4, .05, 'triangle');
+      const m = i % 2 === 0 && mel[bar][i / 2];
+      if (m) { tone(hz(m), next, 1.6, .08, 'sine'); tone(hz(m) * 2, next, .6, .015, 'sine'); }
+      next += eighth; step = (step + 1) % 64;
+    }
+  }
+  function init() {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback'; // lets iPhone play with the silent switch on (Safari 17+)
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    const master = ac.createGain(); master.gain.value = .8; master.connect(ac.destination);
+    bus = ac.createGain(); bus.connect(master);
+    const d = ac.createDelay(), fb = ac.createGain(), lp = ac.createBiquadFilter();
+    d.delayTime.value = .33; fb.gain.value = .3; lp.frequency.value = 2200;
+    bus.connect(d); d.connect(lp).connect(fb).connect(d); lp.connect(master);
+  }
+  return {
+    get on() { return on; },
+    toggle(v = !on) {
+      if (!ac) init();
+      on = v;
+      if (on) { ac.resume(); next = ac.currentTime + .1; timer = setInterval(schedule, 60); }
+      else { clearInterval(timer); ac.suspend(); }
+      $('#music').textContent = on ? '🎵' : '🔇';
+      $('#music').setAttribute('aria-pressed', on);
+    },
+    pause(hidden) { if (ac && on) hidden ? ac.suspend() : ac.resume(); },
+  };
+})();
+$('#music').addEventListener('click', () => music.toggle());
+document.addEventListener('visibilitychange', () => music.pause(document.hidden));
+
 // --- envelope ---
 const env = $('#env');
 function openEnv() {
   if (env.classList.contains('open')) return;
+  music.toggle(true); // must start inside the tap, phones block autoplay
+  $('#music').hidden = false;
   env.classList.remove('bob'); env.classList.add('open');
   const r = env.getBoundingClientRect();
   setTimeout(() => burst(r.left + r.width / 2, r.top + r.height / 3, 80), 700);
